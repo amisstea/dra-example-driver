@@ -22,302 +22,198 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1alpha2"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/dynamic-resource-allocation/controller"
+	"k8s.io/klog/v2"
 
-	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
-	nasclient "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1/client"
-	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	clientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	spacecrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/space/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
 const (
-	DriverAPIGroup = gpucrd.GroupName
+	DriverAPIGroup     = spacecrd.GroupName
+	ResourceClaimLabel = DriverAPIGroup + "/resourceclaim"
 )
 
-type OnSuccessCallback func()
-
 type driver struct {
-	lock      *PerNodeMutex
-	namespace string
-	clientset clientset.Interface
-	gpu       *gpudriver
+	lock       *PerClaimMutex
+	clientsets flags.ClientSets
 }
 
 var _ controller.Driver = &driver{}
 
 func NewDriver(config *Config) *driver {
 	return &driver{
-		lock:      NewPerNodeMutex(),
-		namespace: config.namespace,
-		clientset: config.clientSets.Example,
-		gpu:       NewGpuDriver(),
+		lock:       NewPerClaimMutex(),
+		clientsets: config.clientSets,
 	}
 }
 
-func (d driver) GetClassParameters(ctx context.Context, class *resourcev1.ResourceClass) (interface{}, error) {
-	if class.ParametersRef == nil {
-		return gpucrd.DefaultDeviceClassParametersSpec(), nil
-	}
-	if class.ParametersRef.APIGroup != DriverAPIGroup {
-		return nil, fmt.Errorf("incorrect API group: %v", class.ParametersRef.APIGroup)
-	}
-	dc, err := d.clientset.GpuV1alpha1().DeviceClassParameters().Get(ctx, class.ParametersRef.Name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("error getting DeviceClassParameters called '%v': %v", class.ParametersRef.Name, err)
-	}
-	return &dc.Spec, nil
+func (d *driver) GetClassParameters(ctx context.Context, class *resourcev1.ResourceClass) (interface{}, error) {
+	logger := klog.FromContext(ctx)
+	logger.Info("GetClassParameters", "class", class.Name)
+	return nil, nil
 }
 
-func (d driver) GetClaimParameters(ctx context.Context, claim *resourcev1.ResourceClaim, class *resourcev1.ResourceClass, classParameters interface{}) (interface{}, error) {
+func (d *driver) GetClaimParameters(ctx context.Context, claim *resourcev1.ResourceClaim, class *resourcev1.ResourceClass, classParameters interface{}) (interface{}, error) {
+	logger := klog.FromContext(ctx)
+	logger.Info("GetClaimParameters", "claim", claim.Name, "class", class.Name)
 	if claim.Spec.ParametersRef == nil {
-		return gpucrd.DefaultGpuClaimParametersSpec(), nil
+		return spacecrd.DefaultSpaceClaimParametersSpec(), nil
 	}
 	if claim.Spec.ParametersRef.APIGroup != DriverAPIGroup {
 		return nil, fmt.Errorf("incorrect API group: %v", claim.Spec.ParametersRef.APIGroup)
 	}
 
 	switch claim.Spec.ParametersRef.Kind {
-	case gpucrd.GpuClaimParametersKind:
-		gc, err := d.clientset.GpuV1alpha1().GpuClaimParameters(claim.Namespace).Get(ctx, claim.Spec.ParametersRef.Name, metav1.GetOptions{})
+	case spacecrd.SpaceClaimParametersKind:
+		params, err := d.clientsets.Example.SpaceV1alpha1().SpaceClaimParameters(claim.Namespace).Get(ctx, claim.Spec.ParametersRef.Name, metav1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("error getting GpuClaimParameters called '%v' in namespace '%v': %v", claim.Spec.ParametersRef.Name, claim.Namespace, err)
+			return nil, fmt.Errorf("error getting SpaceClaimParameters called '%v' in namespace '%v': %v", claim.Spec.ParametersRef.Name, claim.Namespace, err)
 		}
-		err = d.gpu.ValidateClaimParameters(&gc.Spec)
-		if err != nil {
-			return nil, fmt.Errorf("error validating GpuClaimParameters called '%v' in namespace '%v': %v", claim.Spec.ParametersRef.Name, claim.Namespace, err)
-		}
-		return &gc.Spec, nil
+		// TODO validate the claim params
+		return &params.Spec, nil
 	default:
 		return nil, fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
 	}
 }
 
-func (d driver) Allocate(ctx context.Context, cas []*controller.ClaimAllocation, selectedNode string) {
-	// In production version of the driver the common operations for every
-	// d.allocate looped call should be done prior this loop, and can be reused
-	// for every d.allocate() looped call.
-	// E.g.: selectedNode=="" check, client stup and CRD fetching.
+func (d *driver) Allocate(ctx context.Context, cas []*controller.ClaimAllocation, selectedNode string) {
+	logger := klog.FromContext(ctx)
+	logger.Info("Allocate", "numClaims", len(cas))
+
 	for _, ca := range cas {
 		ca.Allocation, ca.Error = d.allocate(ctx, ca.Claim, ca.ClaimParameters, ca.Class, ca.ClassParameters, selectedNode)
 	}
 }
 
-func (d driver) allocate(ctx context.Context, claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, selectedNode string) (*resourcev1.AllocationResult, error) {
-
+func (d *driver) allocate(ctx context.Context, claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, selectedNode string) (*resourcev1.AllocationResult, error) {
 	if selectedNode == "" {
 		return nil, fmt.Errorf("TODO: immediate allocations is not yet supported")
 	}
 
-	d.lock.Get(selectedNode).Lock()
-	defer d.lock.Get(selectedNode).Unlock()
+	logger := klog.FromContext(ctx)
 
-	crdconfig := &nascrd.NodeAllocationStateConfig{
-		Name:      selectedNode,
-		Namespace: d.namespace,
-	}
-	crd := nascrd.NewNodeAllocationState(crdconfig)
+	claimUid := string(claim.GetUID())
 
-	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get(ctx)
+	d.lock.Get(claimUid).Lock()
+	defer d.lock.Get(claimUid).Unlock()
+
+	result := &resourcev1.AllocationResult{Shareable: true}
+
+	ns, err := d.getNamespace(ctx, claimUid)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving node specific Gpu CRD: %v", err)
+		return nil, fmt.Errorf("unable to get namespace for claim: %v", err)
 	}
 
-	if crd.Status != nascrd.NodeAllocationStateStatusReady {
-		return nil, fmt.Errorf("NodeAllocationStateStatus: %v", crd.Status)
-	}
+	if ns == nil {
+		claimParams, ok := claimParameters.(*spacecrd.SpaceClaimParametersSpec)
+		if !ok {
+			return nil, fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
+		}
 
-	if crd.Spec.AllocatedClaims == nil {
-		crd.Spec.AllocatedClaims = make(map[string]nascrd.AllocatedDevices)
-	}
-
-	if _, exists := crd.Spec.AllocatedClaims[string(claim.UID)]; exists {
-		return buildAllocationResult(selectedNode, true), nil
-	}
-
-	var onSuccess OnSuccessCallback
-	classParams, _ := classParameters.(*gpucrd.DeviceClassParametersSpec)
-
-	switch claimParams := claimParameters.(type) {
-	case *gpucrd.GpuClaimParametersSpec:
-		onSuccess, err = d.gpu.Allocate(crd, claim, claimParams, class, classParams, selectedNode)
-	default:
-		err = fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("unable to allocate devices on node '%v': %v", selectedNode, err)
-	}
-
-	err = client.Update(ctx, &crd.Spec)
-	if err != nil {
-		return nil, fmt.Errorf("error updating NodeAllocationState CRD: %v", err)
-	}
-
-	onSuccess()
-
-	return buildAllocationResult(selectedNode, true), nil
-}
-
-func (d driver) Deallocate(ctx context.Context, claim *resourcev1.ResourceClaim) error {
-	selectedNode := getSelectedNode(claim)
-	if selectedNode == "" {
-		return nil
-	}
-
-	d.lock.Get(selectedNode).Lock()
-	defer d.lock.Get(selectedNode).Unlock()
-
-	crdconfig := &nascrd.NodeAllocationStateConfig{
-		Name:      selectedNode,
-		Namespace: d.namespace,
-	}
-	crd := nascrd.NewNodeAllocationState(crdconfig)
-
-	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("error retrieving node specific Gpu CRD: %v", err)
-	}
-
-	if crd.Spec.AllocatedClaims == nil {
-		return nil
-	}
-
-	if _, exists := crd.Spec.AllocatedClaims[string(claim.UID)]; !exists {
-		return nil
-	}
-
-	devices := crd.Spec.AllocatedClaims[string(claim.UID)]
-	switch devices.Type() {
-	case nascrd.GpuDeviceType:
-		err = d.gpu.Deallocate(crd, claim)
-	default:
-		err = fmt.Errorf("unknown AllocatedDevices.Type(): %v", devices.Type())
-	}
-	if err != nil {
-		return fmt.Errorf("unable to deallocate devices '%v': %v", devices, err)
-	}
-
-	delete(crd.Spec.AllocatedClaims, string(claim.UID))
-
-	err = client.Update(ctx, &crd.Spec)
-	if err != nil {
-		return fmt.Errorf("error updating NodeAllocationState CRD: %v", err)
-	}
-
-	return nil
-}
-
-func (d driver) UnsuitableNodes(ctx context.Context, pod *corev1.Pod, cas []*controller.ClaimAllocation, potentialNodes []string) error {
-	for _, node := range potentialNodes {
-		err := d.unsuitableNode(ctx, pod, cas, node)
+		ns, err = d.createNamespace(ctx, claimUid, claimParams.GenerateName)
 		if err != nil {
-			return fmt.Errorf("error processing node '%v': %v", node, err)
+			return nil, fmt.Errorf("namespace creation failed: %v", err)
 		}
+	} else {
+		logger.Info("found an existing namespace for a claim", "claimUid", claimUid)
 	}
 
-	for _, ca := range cas {
-		ca.UnsuitableNodes = unique(ca.UnsuitableNodes)
-	}
-
-	return nil
-}
-
-func (d driver) unsuitableNode(ctx context.Context, pod *corev1.Pod, allcas []*controller.ClaimAllocation, potentialNode string) error {
-	d.lock.Get(potentialNode).Lock()
-	defer d.lock.Get(potentialNode).Unlock()
-
-	crdconfig := &nascrd.NodeAllocationStateConfig{
-		Name:      potentialNode,
-		Namespace: d.namespace,
-	}
-	crd := nascrd.NewNodeAllocationState(crdconfig)
-
-	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get(ctx)
-	if err != nil {
-		for _, ca := range allcas {
-			ca.UnsuitableNodes = append(ca.UnsuitableNodes, potentialNode)
-		}
-		return nil
-	}
-
-	if crd.Status != nascrd.NodeAllocationStateStatusReady {
-		for _, ca := range allcas {
-			ca.UnsuitableNodes = append(ca.UnsuitableNodes, potentialNode)
-		}
-		return nil
-	}
-
-	if crd.Spec.AllocatedClaims == nil {
-		crd.Spec.AllocatedClaims = make(map[string]nascrd.AllocatedDevices)
-	}
-
-	perKindCas := make(map[string][]*controller.ClaimAllocation)
-	for _, ca := range allcas {
-		switch ca.ClaimParameters.(type) {
-		case *gpucrd.GpuClaimParametersSpec:
-			perKindCas[gpucrd.GpuClaimParametersKind] = append(perKindCas[gpucrd.GpuClaimParametersKind], ca)
-		default:
-			return fmt.Errorf("unknown ResourceClaimParameters kind: %T", ca.ClaimParameters)
-		}
-	}
-	for _, kind := range []string{gpucrd.GpuClaimParametersKind} {
-		var err error
-		switch kind {
-		case gpucrd.GpuClaimParametersKind:
-			err = d.gpu.UnsuitableNode(crd, pod, perKindCas[kind], allcas, potentialNode)
-		default:
-			err = fmt.Errorf("unknown ResourceClaimParameters kind: %+v", kind)
-		}
-		if err != nil {
-			return fmt.Errorf("error processing '%v': %v", kind, err)
-		}
-	}
-
-	return nil
-}
-
-func buildAllocationResult(selectedNode string, shareable bool) *resourcev1.AllocationResult {
-	nodeSelector := &corev1.NodeSelector{
-		NodeSelectorTerms: []corev1.NodeSelectorTerm{
-			{
-				MatchFields: []corev1.NodeSelectorRequirement{
-					{
-						Key:      "metadata.name",
-						Operator: "In",
-						Values:   []string{selectedNode},
-					},
-				},
-			},
+	// Pass the namespace name to the kubelet plugin. This will be used as a "device" identifier for CDI.
+	result.ResourceHandles = []resourcev1.ResourceHandle{
+		{
+			DriverName: spacecrd.GroupName,
+			Data:       ns.GetName(),
 		},
 	}
-	allocation := &resourcev1.AllocationResult{
-		AvailableOnNodes: nodeSelector,
-		Shareable:        shareable,
-	}
-	return allocation
+
+	return result, nil
 }
 
-func getSelectedNode(claim *resourcev1.ResourceClaim) string {
-	if claim.Status.Allocation == nil {
-		return ""
-	}
-	if claim.Status.Allocation.AvailableOnNodes == nil {
-		return ""
-	}
-	return claim.Status.Allocation.AvailableOnNodes.NodeSelectorTerms[0].MatchFields[0].Values[0]
-}
+func (d *driver) Deallocate(ctx context.Context, claim *resourcev1.ResourceClaim) error {
+	logger := klog.FromContext(ctx)
+	logger.Info("Deallocate", "claim", claim.Name)
 
-func unique(s []string) []string {
-	set := make(map[string]struct{})
-	var news []string
-	for _, str := range s {
-		if _, exists := set[str]; !exists {
-			set[str] = struct{}{}
-			news = append(news, str)
+	claimUid := string(claim.GetUID())
+
+	d.lock.Get(claimUid).Lock()
+	defer d.lock.Get(claimUid).Unlock()
+
+	ns, err := d.getNamespace(ctx, claimUid)
+	if err != nil {
+		return fmt.Errorf("unable to get namespace for claim: %v", err)
+	}
+
+	if ns != nil {
+		err = d.deleteNamespace(ctx, ns)
+		if err != nil {
+			return fmt.Errorf("unable to delete namespace for claim: %v", err)
 		}
 	}
-	return news
+
+	return nil
+}
+
+func (d *driver) UnsuitableNodes(ctx context.Context, pod *corev1.Pod, cas []*controller.ClaimAllocation, potentialNodes []string) error {
+	logger := klog.FromContext(ctx)
+	logger.Info("UnsuitableNodes", "pod", pod.Name, "numClaims", len(cas), "potentialNodes", potentialNodes)
+
+	// All nodes are suitable since namespaces aren't coupled to the host
+	for _, ca := range cas {
+		ca.UnsuitableNodes = []string{}
+	}
+
+	return nil
+}
+
+func (d *driver) getNamespace(ctx context.Context, claimUid string) (*corev1.Namespace, error) {
+	api := d.clientsets.Core.CoreV1().Namespaces()
+	selector := ResourceClaimLabel + "=" + string(claimUid)
+	namespaces, err := api.List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return nil, fmt.Errorf("unable to list namespaces: %v", err)
+	}
+
+	if len(namespaces.Items) == 0 {
+		return nil, nil
+	} else if len(namespaces.Items) > 1 {
+		return nil, fmt.Errorf("more than one namespace found for claimUid: %s", claimUid)
+	}
+
+	return &namespaces.Items[0], nil
+}
+
+func (d *driver) createNamespace(ctx context.Context, claimUid string, generateName string) (*corev1.Namespace, error) {
+	logger := klog.FromContext(ctx)
+
+	labels := map[string]string{ResourceClaimLabel: string(claimUid)}
+	spec := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: generateName,
+			Labels:       labels,
+		},
+	}
+
+	api := d.clientsets.Core.CoreV1().Namespaces()
+	ns, err := api.Create(ctx, spec, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("unable to create namespace: %v", err)
+	}
+
+	logger.Info("created namespace", "claimUid", claimUid, "namespace", ns.Name)
+	return ns, nil
+}
+
+func (d *driver) deleteNamespace(ctx context.Context, ns *corev1.Namespace) error {
+	logger := klog.FromContext(ctx)
+
+	namespaces := d.clientsets.Core.CoreV1().Namespaces()
+	err := namespaces.Delete(ctx, ns.Name, metav1.DeleteOptions{})
+	if err != nil {
+		return err
+	}
+
+	logger.Info("Deleted namespace", "namespace", ns.Name)
+	return nil
 }

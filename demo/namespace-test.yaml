@@ -1,0 +1,74 @@
+# One shared, global claim providing access to a namespace
+# Two pods, each asking for access to the shared namespace
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: namespace-test
+
+---
+apiVersion: space.resource.example.com/v1alpha1
+kind: SpaceClaimParameters
+metadata:
+  namespace: namespace-test
+  name: custom-ns-prefix
+spec:
+  generateName: ephemeral-ns-
+
+---
+apiVersion: resource.k8s.io/v1alpha2
+kind: ResourceClaim
+metadata:
+  namespace: namespace-test
+  name: test-claim
+spec:
+  resourceClassName: space.example.com
+  parametersRef:
+    apiGroup: space.resource.example.com
+    kind: SpaceClaimParameters
+    name: custom-ns-prefix
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: namespace-test
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; sleep 9999"]
+    resources:
+      claims:
+      - name: shared-namespace
+  resourceClaims:
+  - name: shared-namespace
+    source:
+      resourceClaimName: test-claim
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: namespace-test
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; sleep 9999"]
+    resources:
+      claims:
+      - name: shared-namespace
+  resourceClaims:
+  - name: shared-namespace
+    source:
+      resourceClaimName: test-claim

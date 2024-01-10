@@ -44,7 +44,6 @@ import (
 type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
 	loggingConfig    *flags.LoggingConfig
-	nasConfig        flags.NasConfig
 
 	workers int
 
@@ -54,7 +53,6 @@ type Flags struct {
 }
 
 type Config struct {
-	namespace  string
 	flags      *Flags
 	clientSets flags.ClientSets
 	mux        *http.ServeMux
@@ -106,8 +104,6 @@ func newApp() *cli.App {
 
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
-	flags.nasConfig.HideNodeName = true
-	cliFlags = append(cliFlags, flags.nasConfig.Flags()...)
 
 	app := &cli.App{
 		Name:            "dra-example-controller",
@@ -133,7 +129,6 @@ func newApp() *cli.App {
 			config := &Config{
 				mux:        mux,
 				flags:      flags,
-				namespace:  flags.nasConfig.Namespace,
 				clientSets: clientSets,
 			}
 

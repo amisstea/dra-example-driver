@@ -34,3 +34,6 @@ nodes:
     nodeRegistration:
       kubeletExtraArgs:
         v: "1"
+  extraMounts:
+    - hostPath: /tmp/claim-artifacts
+      containerPath: /var/run/claim-artifacts

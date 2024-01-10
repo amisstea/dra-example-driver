@@ -8,7 +8,6 @@ rules:
 - apiGroups:
   - ""
   - resource.k8s.io
-  - gpu.resource.example.com
-  - nas.gpu.resource.example.com
+  - space.resource.example.com
   resources: ["*"]
   verbs: ["*"]

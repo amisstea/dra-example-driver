@@ -20,22 +20,22 @@ import (
 	"sync"
 )
 
-type PerNodeMutex struct {
+type PerClaimMutex struct {
 	sync.Mutex
 	submutex map[string]*sync.Mutex
 }
 
-func NewPerNodeMutex() *PerNodeMutex {
-	return &PerNodeMutex{
+func NewPerClaimMutex() *PerClaimMutex {
+	return &PerClaimMutex{
 		submutex: make(map[string]*sync.Mutex),
 	}
 }
 
-func (pnm *PerNodeMutex) Get(node string) *sync.Mutex {
-	pnm.Mutex.Lock()
-	defer pnm.Mutex.Unlock()
-	if pnm.submutex[node] == nil {
-		pnm.submutex[node] = &sync.Mutex{}
+func (m *PerClaimMutex) Get(claimUid string) *sync.Mutex {
+	m.Lock()
+	defer m.Unlock()
+	if m.submutex[claimUid] == nil {
+		m.submutex[claimUid] = &sync.Mutex{}
 	}
-	return pnm.submutex[node]
+	return m.submutex[claimUid]
 }

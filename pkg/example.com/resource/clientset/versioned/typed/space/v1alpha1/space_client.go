@@ -22,33 +22,28 @@ import (
 	"net/http"
 
 	rest "k8s.io/client-go/rest"
-	v1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	v1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/space/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/scheme"
 )
 
-type GpuV1alpha1Interface interface {
+type SpaceV1alpha1Interface interface {
 	RESTClient() rest.Interface
-	DeviceClassParametersGetter
-	GpuClaimParametersGetter
+	SpaceClaimParametersGetter
 }
 
-// GpuV1alpha1Client is used to interact with features provided by the gpu.resource.example.com group.
-type GpuV1alpha1Client struct {
+// SpaceV1alpha1Client is used to interact with features provided by the space.resource.example.com group.
+type SpaceV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *GpuV1alpha1Client) DeviceClassParameters() DeviceClassParametersInterface {
-	return newDeviceClassParameters(c)
+func (c *SpaceV1alpha1Client) SpaceClaimParameters(namespace string) SpaceClaimParametersInterface {
+	return newSpaceClaimParameters(c, namespace)
 }
 
-func (c *GpuV1alpha1Client) GpuClaimParameters(namespace string) GpuClaimParametersInterface {
-	return newGpuClaimParameters(c, namespace)
-}
-
-// NewForConfig creates a new GpuV1alpha1Client for the given config.
+// NewForConfig creates a new SpaceV1alpha1Client for the given config.
 // NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
 // where httpClient was generated with rest.HTTPClientFor(c).
-func NewForConfig(c *rest.Config) (*GpuV1alpha1Client, error) {
+func NewForConfig(c *rest.Config) (*SpaceV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -60,9 +55,9 @@ func NewForConfig(c *rest.Config) (*GpuV1alpha1Client, error) {
 	return NewForConfigAndClient(&config, httpClient)
 }
 
-// NewForConfigAndClient creates a new GpuV1alpha1Client for the given config and http client.
+// NewForConfigAndClient creates a new SpaceV1alpha1Client for the given config and http client.
 // Note the http client provided takes precedence over the configured transport values.
-func NewForConfigAndClient(c *rest.Config, h *http.Client) (*GpuV1alpha1Client, error) {
+func NewForConfigAndClient(c *rest.Config, h *http.Client) (*SpaceV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -71,12 +66,12 @@ func NewForConfigAndClient(c *rest.Config, h *http.Client) (*GpuV1alpha1Client, 
 	if err != nil {
 		return nil, err
 	}
-	return &GpuV1alpha1Client{client}, nil
+	return &SpaceV1alpha1Client{client}, nil
 }
 
-// NewForConfigOrDie creates a new GpuV1alpha1Client for the given config and
+// NewForConfigOrDie creates a new SpaceV1alpha1Client for the given config and
 // panics if there is an error in the config.
-func NewForConfigOrDie(c *rest.Config) *GpuV1alpha1Client {
+func NewForConfigOrDie(c *rest.Config) *SpaceV1alpha1Client {
 	client, err := NewForConfig(c)
 	if err != nil {
 		panic(err)
@@ -84,9 +79,9 @@ func NewForConfigOrDie(c *rest.Config) *GpuV1alpha1Client {
 	return client
 }
 
-// New creates a new GpuV1alpha1Client for the given RESTClient.
-func New(c rest.Interface) *GpuV1alpha1Client {
-	return &GpuV1alpha1Client{c}
+// New creates a new SpaceV1alpha1Client for the given RESTClient.
+func New(c rest.Interface) *SpaceV1alpha1Client {
+	return &SpaceV1alpha1Client{c}
 }
 
 func setConfigDefaults(config *rest.Config) error {
@@ -104,7 +99,7 @@ func setConfigDefaults(config *rest.Config) error {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *GpuV1alpha1Client) RESTClient() rest.Interface {
+func (c *SpaceV1alpha1Client) RESTClient() rest.Interface {
 	if c == nil {
 		return nil
 	}

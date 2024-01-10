@@ -14,7 +14,17 @@
  * limitations under the License.
  */
 
-// +k8s:deepcopy-gen=package
-// +groupName=gpu.resource.example.com
-
 package v1alpha1
+
+const (
+	GroupName = "space.resource.example.com"
+	Version   = "v1alpha1"
+
+	SpaceClaimParametersKind = "SpaceClaimParameters"
+)
+
+func DefaultSpaceClaimParametersSpec() *SpaceClaimParametersSpec {
+	return &SpaceClaimParametersSpec{
+		GenerateName: "space-",
+	}
+}

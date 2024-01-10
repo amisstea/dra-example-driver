@@ -18,4 +18,4 @@
 
 package v1alpha1
 
-type NodeAllocationStateExpansion interface{}
+type SpaceClaimParametersExpansion interface{}

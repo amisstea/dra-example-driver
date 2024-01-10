@@ -21,20 +21,20 @@ package fake
 import (
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
+	v1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/space/v1alpha1"
 )
 
-type FakeNasV1alpha1 struct {
+type FakeSpaceV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeNasV1alpha1) NodeAllocationStates(namespace string) v1alpha1.NodeAllocationStateInterface {
-	return &FakeNodeAllocationStates{c, namespace}
+func (c *FakeSpaceV1alpha1) SpaceClaimParameters(namespace string) v1alpha1.SpaceClaimParametersInterface {
+	return &FakeSpaceClaimParameters{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeNasV1alpha1) RESTClient() rest.Interface {
+func (c *FakeSpaceV1alpha1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }
