@@ -92,6 +92,7 @@ DRA_RESOURCE_DRIVER_NAME=space.resource.example.com
 TEST_CLAIM_CLUSTER=https://cluster.todo
 TEST_CLAIM_NAMESPACE=ephemeral-ns-4rsv8
 TEST_CLAIM_KUBECONFIG=/var/run/claim-artifacts/e2140c9f-4fea-44a6-b688-2f52763194ab/kubeconfig
+...
 
 $ kubectl exec -n namespace-test pod1 -- printenv
 DRA_RESOURCE_DRIVER_NAME=space.resource.example.com
@@ -142,4 +143,4 @@ Delete your cluster when you're done.
 For more information on the DRA Kubernetes feature and developing custom resource drivers, see the following resources:
 
 * [Dynamic Resource Allocation in Kubernetes](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
-* [KEP:3063-dynamic-resource-allocation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation)
+* [KEP: 3063-dynamic-resource-allocation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation)
