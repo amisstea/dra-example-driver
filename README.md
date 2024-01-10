@@ -25,6 +25,11 @@ The procedure below has been tested and verified on Linux (Fedora).
 
 ### Demo
 
+This demo requires a specific directory be present on the host:
+```bash
+mkdir /tmp/claim-artifacts
+```
+
 Create a `kind` cluster to run everything in:
 ```bash
 ./demo/create-cluster.sh
