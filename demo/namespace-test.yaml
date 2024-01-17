@@ -40,9 +40,16 @@ metadata:
 spec:
   containers:
   - name: ctr0
-    image: ubuntu:22.04
+    image: registry.access.redhat.com/ubi9/ubi:9.3-1476
     command: ["bash", "-c"]
     args: ["export; sleep 9999"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     resources:
       claims:
       - name: shared-namespace
@@ -62,9 +69,16 @@ metadata:
 spec:
   containers:
   - name: ctr0
-    image: ubuntu:22.04
+    image: registry.access.redhat.com/ubi9/ubi:9.3-1476
     command: ["bash", "-c"]
     args: ["export; sleep 9999"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     resources:
       claims:
       - name: shared-namespace
